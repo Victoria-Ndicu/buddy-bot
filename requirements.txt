@@ -1,0 +1,6 @@
+flask
+flask-cors
+openai
+python-dotenv
+requests  # Optional, if you're using it elsewhere
+gunicorn  # For production WSGI server (optional)

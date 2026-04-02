@@ -31,13 +31,9 @@ session_threads = {}
 # ==============================
 # Health check
 # ==============================
-@app.route('/', methods=['GET'])
-def home():
-    return jsonify({
-        "status": "ok",
-        "message": "Bot server is running 🚀"
-    })
-
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"}), 200
 
 # ==============================
 # Chat endpoint

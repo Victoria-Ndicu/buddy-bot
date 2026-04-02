@@ -38,7 +38,7 @@ session_histories = {}
 # ==============================
 # Health check
 # ==============================
-@app.route('/health', methods=['GET'])
+@app.route('/', methods=['GET'])
 def health():
     return jsonify({"status": "ok"}), 200
 

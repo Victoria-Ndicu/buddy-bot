@@ -1,32 +1,39 @@
-import uuid
 import os
 import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-import openai
+from openai import OpenAI
 
 # ==============================
 # Load environment variables
 # ==============================
 load_dotenv()
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 APP_API_KEY = os.getenv("APP_API_KEY")  # optional security layer
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a helpful assistant.")
+
+# ==============================
+# DeepSeek client (OpenAI-compatible)
+# ==============================
+client = OpenAI(
+    api_key=DEEPSEEK_API_KEY,
+    base_url="https://api.deepseek.com"
+)
 
 # ==============================
 # Initialize app
 # ==============================
 app = Flask(__name__)
-
-# Allow all origins (safe for Flutter mobile)
-CORS(app)
+CORS(app)  # Allow all origins (safe for Flutter mobile)
 
 # ==============================
 # In-memory session store
-# ==============================
+# { user_id: [ {role, content}, ... ] }
 # NOTE: Replace with Redis/DB in production
-session_threads = {}
+# ==============================
+session_histories = {}
 
 # ==============================
 # Health check
@@ -64,71 +71,38 @@ def chat():
             return jsonify({"error": "Missing message or user_id"}), 400
 
         # --------------------------
-        # Get or create thread
+        # Get or create conversation history
         # --------------------------
-        thread_id = session_threads.get(user_id)
+        if user_id not in session_histories:
+            session_histories[user_id] = [
+                {"role": "system", "content": SYSTEM_PROMPT}
+            ]
 
-        if not thread_id:
-            thread = openai.beta.threads.create()
-            thread_id = thread.id
-            session_threads[user_id] = thread_id
+        history = session_histories[user_id]
+        history.append({"role": "user", "content": user_message})
 
         # --------------------------
-        # Add user message
+        # Call DeepSeek
         # --------------------------
-        openai.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=history,
+            stream=False
         )
 
-        # --------------------------
-        # Run assistant
-        # --------------------------
-        run = openai.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=os.getenv("ASSISTANT_ID")
-        )
+        bot_reply = response.choices[0].message.content
 
         # --------------------------
-        # Wait for completion (safe polling)
+        # Save assistant reply to history
         # --------------------------
-        max_retries = 20
-        for _ in range(max_retries):
-            status = openai.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run.id
-            )
-
-            if status.status == "completed":
-                break
-            elif status.status in ["failed", "cancelled", "expired"]:
-                return jsonify({"error": f"Run {status.status}"}), 500
-
-            time.sleep(0.5)
-        else:
-            return jsonify({"error": "Timeout waiting for response"}), 504
-
-        # --------------------------
-        # Get latest assistant reply
-        # --------------------------
-        messages = openai.beta.threads.messages.list(thread_id=thread_id)
-
-        bot_reply = None
-        for msg in messages.data:
-            if msg.role == "assistant":
-                bot_reply = msg.content[0].text.value
-                break
-
-        if not bot_reply:
-            return jsonify({"error": "No response from assistant"}), 500
+        history.append({"role": "assistant", "content": bot_reply})
 
         # --------------------------
         # Success response
         # --------------------------
         return jsonify({
             "reply": bot_reply,
-            "thread_id": thread_id
+            "user_id": user_id
         })
 
     except Exception as e:
@@ -139,8 +113,20 @@ def chat():
 
 
 # ==============================
+# Clear session (optional utility)
+# ==============================
+@app.route('/api/reset', methods=['POST'])
+def reset():
+    data = request.get_json()
+    user_id = data.get('user_id') if data else None
+    if user_id and user_id in session_histories:
+        del session_histories[user_id]
+    return jsonify({"status": "reset"}), 200
+
+
+# ==============================
 # Run app
 # ==============================
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))  # Railway compatibility
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)

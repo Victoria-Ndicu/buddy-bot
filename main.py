@@ -40,15 +40,11 @@ session_histories = {}
 # Reply formatter
 # ==============================
 def format_reply(text: str) -> str:
-    """
-    Cleans up bot replies:
-    - Strips markdown asterisks (* and **)
-    - Normalises bullet dashes into clean paragraph breaks
-    - Collapses excess blank lines
-    - Returns neatly spaced paragraphs
-    """
     # Remove bold/italic markers (**, *)
     text = re.sub(r'\*{1,3}', '', text)
+
+    # Remove markdown heading markers (#, ##, ###)
+    text = re.sub(r'^\s*#{1,6}\s*', '', text, flags=re.MULTILINE)
 
     # Replace markdown bullet lines (- item or • item) with a blank line + text
     text = re.sub(r'^\s*[-•]\s+', '\n', text, flags=re.MULTILINE)

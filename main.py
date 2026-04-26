@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -34,6 +35,32 @@ CORS(app)  # Allow all origins (safe for Flutter mobile)
 # NOTE: Replace with Redis/DB in production
 # ==============================
 session_histories = {}
+
+# ==============================
+# Reply formatter
+# ==============================
+def format_reply(text: str) -> str:
+    """
+    Cleans up bot replies:
+    - Strips markdown asterisks (* and **)
+    - Normalises bullet dashes into clean paragraph breaks
+    - Collapses excess blank lines
+    - Returns neatly spaced paragraphs
+    """
+    # Remove bold/italic markers (**, *)
+    text = re.sub(r'\*{1,3}', '', text)
+
+    # Replace markdown bullet lines (- item or • item) with a blank line + text
+    text = re.sub(r'^\s*[-•]\s+', '\n', text, flags=re.MULTILINE)
+
+    # Replace markdown numbered lists (1. item) similarly
+    text = re.sub(r'^\s*\d+\.\s+', '\n', text, flags=re.MULTILINE)
+
+    # Collapse 3+ consecutive newlines into exactly 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # Strip leading/trailing whitespace
+    return text.strip()
 
 # ==============================
 # Health check
@@ -90,7 +117,7 @@ def chat():
             stream=False
         )
 
-        bot_reply = response.choices[0].message.content
+        bot_reply = format_reply(response.choices[0].message.content)
 
         # --------------------------
         # Save assistant reply to history
